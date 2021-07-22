@@ -14,7 +14,7 @@ class CodeLogger:
         """make logger"""
         self.logger = logging.getLogger(os.path.basename(__file__))
         self.formatter = logging.Formatter(
-            '["%(asctime)s - %(levelname)s - %(name)s - %(message)s" - function:%(funcName)s - line:%(lineno)d]')
+            '["%(asctime)s - %(levelname)s - %(message)s" - function:%(funcName)s - line:%(lineno)d]')
         self.log_name = config['filepath']['log_path'] + datetime.now().strftime("forecast_%Y-%m-%d_%H-%M-%S.log")
         logging.basicConfig(level=logging.INFO, datefmt='%Y%m%d_%H:%M:%S',)
 
