@@ -9,9 +9,8 @@ logg = CodeLogger()
 
 
 def data_patch(df):
-    """補足缺失值"""
+    """補足表格的缺失值"""
     try:
-        num = 0
         for idx_row, row in df.iterrows():
             if row.isnull().T.any():
                 df.iloc[idx_row, 4:10] = df.iloc[idx_row - 1, 4:10]
@@ -25,7 +24,7 @@ def data_patch(df):
         logg.logger.error(me)
 
 def date_format(df):
-    """日期轉換"""
+    """表格數據日期轉換"""
     try:
         df['SDATE'] = df['SDATE'].apply(lambda x: datetime.strptime(x, "%Y/%m/%d"))
         df['Year'] = df['SDATE'].apply(lambda x: x.strftime("%Y"))
@@ -38,7 +37,7 @@ def date_format(df):
 
 
 def data_encode(df):
-    """編碼轉換"""
+    """表格數據編碼轉換"""
     try:
         # label_encode
         label_encoder = preprocessing.LabelEncoder()
@@ -46,17 +45,12 @@ def data_encode(df):
             df[col] = label_encoder.fit_transform(df[col])
         new_df = df.drop(['SDATE', 'EXIT'], axis=1)
         return new_df, df['SDATE'].apply(lambda x: x.strftime("%Y/%m/%d"))
-    #     # onehot_encode
-    #     onehot = df[['HOLIDAY','CELEBRATION','HIGH_TEMP','LOW_TEMP','SKY']]
-    #     df_dum = pd.get_dummies(data=onehot)
-    #     df_dum = pd.concat([df, df_dum], axis=1)
-    #     df_dum = df_dum.drop([onehot,'SDATE','EIXT'], axis=1)
-    #     return df_dum
     except Exception as me:
         logg.logger.error(me)
 
-
 def type_transform(df):
+    """表格數據儲存格式轉換"""
+    # 將物件格式數據改成數值格式，便於計算
     try:
         for col in df.columns:
             if df.dtypes[col] == 'object':
@@ -66,6 +60,7 @@ def type_transform(df):
         logg.logger.error(me)
 
 def df_null(df_set, idx, key):
+    """檢驗門店數據是否存在，若無則儲存錯誤log"""
     if idx == 0:
         logg.logger.error(f'storeid {key} 訓練集為空')
         store.store_log('error',f'storeid {key} 訓練集為空')
@@ -107,5 +102,3 @@ def deal_dataframe(value, key):
         return df_set
     except Exception as me:
         logg.logger.error(me)
-
-

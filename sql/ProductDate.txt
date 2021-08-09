@@ -1,0 +1,32 @@
+drop table if exists DATES
+
+DECLARE  @t TABLE
+( StartDate DATETIME, EndDate DATETIME);
+
+INSERT INTO @t (StartDate, EndDate)
+VALUES  ('@StartDate@', '@EndDate@');
+
+-- @StoreId@
+
+--宣告一個起始時間變數
+DECLARE @TempStartDate DATETIME
+DECLARE @TempEndDate DATETIME
+
+--設置變數 最小時間(起始時間)  和 最大時間
+SELECT @TempStartDate = StartDate,@TempEndDate=EndDate FROM @t
+
+CREATE TABLE #TEMP(SDATE VARCHAR(8))
+
+WHILE(@TempStartDate <= @TempEndDate)
+BEGIN
+     --將資料新增入暫存表
+     INSERT INTO #TEMP (SDATE) VALUES (CONVERT(VARCHAR(8),@TempStartDate,112))
+     --每跑一次迴圈就加一個月
+  SELECT @TempStartDate = DATEADD(DAY,1,@TempStartDate)
+END
+
+select * into DATES from (SELECT * FROM #TEMP) p
+
+DROP TABLE #TEMP
+
+select * from DATES

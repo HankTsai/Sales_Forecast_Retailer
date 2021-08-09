@@ -6,6 +6,7 @@ import joblib
 import argparse
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot
 from datetime import datetime
 from pymssql import connect
 from configparser import ConfigParser
@@ -18,8 +19,8 @@ from sklearn.metrics import r2_score, mean_squared_error, mean_absolute_error
 
 
 class CodeLogger:
+    """log儲存設定模組"""
     def __init__(self):
-        """make logger"""
         self.logger = logging.getLogger(os.path.basename(__file__))
         self.formatter = logging.Formatter(
             '["%(asctime)s - %(levelname)s - %(name)s - %(message)s" - function:%(funcName)s - line:%(lineno)d]')
@@ -27,13 +28,14 @@ class CodeLogger:
         logging.basicConfig(level=logging.INFO, datefmt='%Y%m%d_%H:%M:%S',)
 
     def store_logger(self):
-        """definite log"""
+        """設定log儲存"""
         handler = logging.FileHandler(self.log_name, "w", encoding = "UTF-8")
         handler.setFormatter(self.formatter)
         self.logger.addHandler(handler)
         self.logger.propagate = False
 
     def show_logger(self):
+        """設定log在終端機顯示"""
         console = logging.StreamHandler()
         console.setLevel(logging.FATAL)
         console.setFormatter(self.formatter)
@@ -41,6 +43,7 @@ class CodeLogger:
 
 
 class DBConnect:
+    """繼承並設計DB連線處理"""
     def __init__(self):
         self.host = config['connect']['server']
         self.user = config['connect']['username']
@@ -49,6 +52,8 @@ class DBConnect:
         self.conn = connect(host=self.host, user=self.user, password=self.password, database=self.database, autocommit=True)
 
     def query(self, sql, as_dict=False, para=()):
+        """查詢DB數據"""
+        # as_dict 是讓數據呈現key/value型態
         try:
             cursor = self.conn.cursor(as_dict)
             if para:
@@ -61,6 +66,7 @@ class DBConnect:
             CodeLogger().logger.error(me)
 
     def insert(self, sql, para=()):
+        """新增DB數據"""
         try:
             cursor = self.conn.cursor()
             cursor.execute(sql,para)
@@ -68,6 +74,7 @@ class DBConnect:
             CodeLogger().logger.error(me)
 
     def delete(self, sql, para=()):
+        """刪除DB數據"""
         try:
             cursor = self.conn.cursor()
             cursor.execute(sql,para)
@@ -82,7 +89,7 @@ class DBConnect:
 
 
 class DataGet:
-
+    """獲取DB數據模組"""
     def __init__(self, pass_day, run_day, date):
         self.pass_day = pass_day
         self.run_day = run_day
@@ -90,10 +97,21 @@ class DataGet:
         self.row_train_query = config['filepath']['train_query']
         self.row_predict_query = config['filepath']['predict_query']
         self.row_date_update = config['filepath']['date_update']
-        self.storeid_query = "select LOC_ID from SFI_I21_STORE;"
+
+    @staticmethod
+    def get_stage():
+        """選出已啟用的門店號"""
+        stage_query = "select LOC_ID, STATUS from SFI_I21_STORE order by LOC_ID "
+        cursor = conn.query(stage_query, as_dict=True)
+        store_stage = pd.DataFrame(cursor.fetchall())
+        launch_list = []
+        for idx, row in store_stage.iterrows():
+            if row[1] == 1:
+                launch_list.append(str(row[0]))
+        return launch_list
 
     def get_query(self):
-        """將基礎sql指令帶入"""
+        """將基礎sql.txt帶入"""
         try:
             with open(self.row_train_query, 'r',encoding="utf-8") as file:
                 T_query = file.read()
@@ -101,14 +119,13 @@ class DataGet:
                 P_query = file.read()
             with open(self.row_date_update, 'r',encoding="utf-8") as file:
                 D_update = file.read()
-            data = conn.query(self.storeid_query)
-            store_ids = [str(item[0]) for item in data]
+            store_ids = self.get_stage()
             return T_query, P_query, D_update, store_ids
         except Exception as me:
             logg.logger.error(me)
 
     def query_modify(self, query, store_id, data_type=""):
-        """修改SQL指令"""
+        """修改讀取的SQL指令"""
         try:
             start_date = ""; end_date=""
             if data_type == 'train':
@@ -132,7 +149,7 @@ class DataGet:
             logg.logger.error(me)
 
     def get_dataframe(self,T_query, P_query, D_update, store_ids):
-        """使用sql指令獲取數據"""
+        """使用調整過的sql指令獲取數據"""
         data_set = {}
         try:
             for store_id in store_ids:
@@ -156,9 +173,8 @@ class DataGet:
 
 
 def data_patch(df):
-    """補足缺失值"""
+    """補足表格的缺失值"""
     try:
-        num = 0
         for idx_row, row in df.iterrows():
             if row.isnull().T.any():
                 df.iloc[idx_row, 4:10] = df.iloc[idx_row - 1, 4:10]
@@ -172,7 +188,7 @@ def data_patch(df):
         logg.logger.error(me)
 
 def date_format(df):
-    """日期轉換"""
+    """表格數據日期轉換"""
     try:
         df['SDATE'] = df['SDATE'].apply(lambda x: datetime.strptime(x, "%Y/%m/%d"))
         df['Year'] = df['SDATE'].apply(lambda x: x.strftime("%Y"))
@@ -185,7 +201,7 @@ def date_format(df):
 
 
 def data_encode(df):
-    """編碼轉換"""
+    """表格數據編碼轉換"""
     try:
         # label_encode
         label_encoder = preprocessing.LabelEncoder()
@@ -193,17 +209,12 @@ def data_encode(df):
             df[col] = label_encoder.fit_transform(df[col])
         new_df = df.drop(['SDATE', 'EXIT'], axis=1)
         return new_df, df['SDATE'].apply(lambda x: x.strftime("%Y/%m/%d"))
-    #     # onehot_encode
-    #     onehot = df[['HOLIDAY','CELEBRATION','HIGH_TEMP','LOW_TEMP','SKY']]
-    #     df_dum = pd.get_dummies(data=onehot)
-    #     df_dum = pd.concat([df, df_dum], axis=1)
-    #     df_dum = df_dum.drop([onehot,'SDATE','EIXT'], axis=1)
-    #     return df_dum
     except Exception as me:
         logg.logger.error(me)
 
-
 def type_transform(df):
+    """表格數據儲存格式轉換"""
+    # 將物件格式數據改成數值格式，便於計算
     try:
         for col in df.columns:
             if df.dtypes[col] == 'object':
@@ -213,6 +224,7 @@ def type_transform(df):
         logg.logger.error(me)
 
 def df_null(df_set, idx, key):
+    """檢驗門店數據是否存在，若無則儲存錯誤log"""
     if idx == 0:
         logg.logger.error(f'storeid {key} 訓練集為空')
         store.store_log('error',f'storeid {key} 訓練集為空')
@@ -256,7 +268,7 @@ def deal_dataframe(value, key):
         logg.logger.error(me)
 
 class ModelProcess:
-
+    """模型預測模組"""
     def __init__(self, train, verify, predict, store_id):
         self.train = train
         self.verify =verify
@@ -267,18 +279,21 @@ class ModelProcess:
             os.mkdir(self.dir_path)
 
     def get_paras(self, start_date, end_date):
+        """獲取模型超參數"""
         paras_query_normal = f"select * from SFI_F16_WEEKLY_HYPEPARAM_OPT where STOREID=%s and  START_DATE<=%s and END_DATE>=%s"
         paras_query_best = f"select top 1 * from SFI_F16_WEEKLY_HYPEPARAM_OPT where STOREID=%s order by MODEL_SCORE desc"
         try:
             cursor = conn.query(paras_query_normal, para=(self.store_id, start_date, end_date)).fetchone()
             if cursor is not None:
                 log = '時間範圍內模型參數存在，直接採用DB當周最優'
+                print(log)
                 logg.logger.info(log)
                 return cursor
             else:
                 cursor = conn.query(paras_query_best, para=self.store_id).fetchone()
                 if cursor is not None:
                     log = '時間範圍內模型參數不存在，將採用DB中分數最優'
+                    print(log)
                     logg.logger.info(log)
                     return cursor
         except Exception as me:
@@ -286,17 +301,29 @@ class ModelProcess:
 
     @staticmethod
     def para_produce(X, y):
+        """模型超參數產生"""
         try:
-            cv_params = [{'eta': [0.1, 0.132, 0.3],
+            cv_params = [{'eta': [0.05,0.1,0.2,0.3],
                           'gamma': [0],
-                          'max_depth': [1,2,3],
+                          'max_depth': [1,3,5],
                           'subsample': [0.3,0.5,1],
                           'reg_lambda': [1],
                           'reg_alpha': [0],
-                          'n_estimators': [200, 250, 290, 300],
-                          'min_child_weight': [13, 15, 17, 19],
-                          'colsample_bytree': [0.15, 0.222, 0.3, 0.4],
+                          'n_estimators': [20,50,70,100,150,200],
+                          'min_child_weight': [5,10,15,20],
+                          'colsample_bytree': [0.1,0.3,0.5,1],
                           'colsample_bylevel': [1]}]
+            # 測試用參數
+            # cv_params = [{'eta': [0.132],
+            #               'gamma': [0],
+            #               'max_depth': [1],
+            #               'subsample': [1],
+            #               'reg_lambda': [1],
+            #               'reg_alpha': [0],
+            #               'n_estimators': [290],
+            #               'min_child_weight': [17],
+            #               'colsample_bytree': [0.222],
+            #               'colsample_bylevel': [1]}]
             model_xgb = XGBRegressor()
             tss = TimeSeriesSplit(max_train_size=None, n_splits=10)
             gs = GridSearchCV(model_xgb, cv_params, verbose=2, refit=True, cv=tss, n_jobs=-1)
@@ -307,6 +334,7 @@ class ModelProcess:
 
     @staticmethod
     def para_select(paras):
+        """依照模型超參數選擇訓練的數據帶入格式"""
         if type(paras) is tuple:
             model = XGBRegressor(n_estimators=paras[10], max_depth=paras[6], gamma=paras[5],
                                  subsample=paras[7], reg_alpha=paras[9], reg_lambda=paras[8],
@@ -320,33 +348,51 @@ class ModelProcess:
                                  min_child_weight=paras['min_child_weight'], eta=paras['eta'], nthread=4)
             return model
 
+    @staticmethod
+    def feature_import(X, model):
+        """彙整特徵重要性"""
+        feature = {}
+        for idx,col in enumerate(X.columns):
+            feature[col] = model.feature_importances_[idx]
+        feature = sorted(feature.items(), key=lambda e: e[1], reverse=True)
+        feature = [item[0]+'_'+str(item[1]) for item in feature]
+        return feature
+
     def model_train(self, paras_use, start_date, end_date):
+        """切分數據、模型訓練和儲存模型"""
         try:
-            X = self.train.drop(['TARGET'], axis=1)
-            y = self.train['TARGET']
+            X_train = self.train.drop(['TARGET'], axis=1)
+            y_train = self.train['TARGET']
+            X_test = self.verify.drop(['TARGET'], axis=1)
+            y_test = self.verify['TARGET']
+
             if paras_use == 1:
                 paras = self.get_paras(start_date, end_date)
                 model = self.para_select(paras)
             else:
-                paras = self.para_produce(X, y)
+                paras = self.para_produce(X_train, y_train)
                 model = self.para_select(paras)
-            model.fit(X, y)
+
+            eval_set = [(X_train,y_train),(X_test,y_test)]
+            model.fit(X_train, y_train, eval_set=eval_set, eval_metric="mae",early_stopping_rounds=5)
             joblib.dump(model, f'{self.dir_path}/{self.store_id}.pkl')
-            logg.logger.info(f'已儲存每周最優化模型 model_{self.store_id}.pkl')
-            return model
+            feature = self.feature_import(X_train, model)
+            logg.logger.info(f'已儲存當次最優化模型 model_{self.store_id}.pkl')
+            store.store_log
+            return model,feature
         except Exception as me:
             logg.logger.error(me)
 
     def model_matrices(self, y_true, y_pred, row_num, date):
         """模型評分指標"""
         try:
-            rmse = round(np.sqrt(mean_squared_error(y_true, y_pred)), 2)            # RMSE
-            mae = round(mean_absolute_error(y_true, y_pred), 2)                     # MAE
-            r2 = round(r2_score(y_true, y_pred), 2)                                 # R2
-            mape = round(np.mean(np.abs((y_true - y_pred) / y_true)) * 100, 2)      # MAPE
-            mape2 = mape * 100                                                      # MAPE2
-            name = f'model_{self.store_id}'                                          # ModelFileName
-            gdate = date.strftime("%Y/%m/%d")                                       # GDATE
+            rmse = round(np.sqrt(mean_squared_error(y_true, y_pred)), 2)
+            mae = round(mean_absolute_error(y_true, y_pred), 2)
+            r2 = round(r2_score(y_true, y_pred), 2)
+            mape = round(np.mean(np.abs((y_true - y_pred) / y_true)) * 100, 2)
+            mape2 = mape * 100
+            name = f'model_{self.store_id}'
+            gdate = date.strftime("%Y/%m/%d")
             return [self.store_id, row_num, rmse, mae, r2, mape, mape2, name, gdate]
         except Exception as me:
             logg.logger.error(me)
@@ -364,18 +410,34 @@ class ModelProcess:
         except Exception as me:
             logg.logger.error(me)
 
+    @staticmethod
+    def learn_curve(model):
+        """繪製學習曲線圖"""
+        results = model.evals_result()
+        pyplot.style.use("ggplot")
+        pyplot.figure(figsize=(8, 8))
+        pyplot.plot(results['validation_0']['mae'], label='train')
+        pyplot.plot(results['validation_1']['mae'], label='test')
+        pyplot.xlabel('Iteration')
+        pyplot.ylabel('mae')
+        pyplot.title("learning_curve")
+        pyplot.legend(labels=["train","test"], loc = 'best')
+        pyplot.savefig("123.png")
+
     def model_verify(self, model, row_num, date):
+        """模型驗證"""
         try:
             X = self.verify.drop(['TARGET'], axis=1)
             y_true = self.verify['TARGET']
             y_pred = model.predict(X)
             evaluate = self.model_matrices(y_true, y_pred, row_num, date)
+            # self.learn_curve(model)
             return evaluate
         except Exception as me:
             logg.logger.error(me)
 
     def model_predict(self, model, sdate):
-        """模型預測值"""
+        """模型預測"""
         try:
             X = self.predict.drop(['TARGET'], axis=1)
             y_true = self.predict['TARGET']
@@ -385,21 +447,33 @@ class ModelProcess:
         except Exception as me:
             logg.logger.error(me)
 
-
 class StoreData:
-
-    def __init__(self,store_id='',store_num=0,log_order=0):
+    """預測資料儲存模組"""
+    def __init__(self,store_id='',store_num=0,log_order=0,start_date='',end_date=''):
         self.store_num = store_num
         self.store_id = store_id
+        self.start_date = start_date
+        self.end_date = end_date
         self.log_order = log_order
 
     def store_log(self,stage,log):
+        """ECP_SMXCAAA的log儲存設定"""
         log_insert = "insert into SMXCAAA values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
         log_time = datetime.now().strftime("%Y/%m/%d %H:%M:%S")
+        level = {'info':11,'major':15,'warning':17,'error':19}
         if stage == 'info':
-            log_title = '預測功能正常執行'
+            log_title = '預測功能正常'
+            stage_code = level[stage]
+        elif stage == 'major':
+            log_title = '預測統計顯示'
+            stage_code = level[stage]
+        elif stage == 'warning':
+            log_title = '特殊情況警告'
+            stage_code = level[stage]
         else:
-            log_title = '預測功能出現異常'
+            log_title = '預測功能異常'
+            stage_code = level[stage]
+
         try:
             self.log_order += 1
             order = str(self.log_order)
@@ -408,10 +482,27 @@ class StoreData:
             elif len(order) == 3: order = f'{order}.'
 
             conn.insert(log_insert, para=(str(uuid.uuid4()), 'MART', '銷售預測系統', 'Batch', '批次', 'Batch_51',
-                                          '模型預測來客數', 11, log_time, order+log_title, log, 'administrator',
+                                          '模型預測來客數', stage_code, log_time, order+log_title, log, 'administrator',
                                           '系統管理員', '', 'python', 'SYSTEM', log_time, '', ''))
         except Exception as me:
             logg.logger.error(me)
+
+    def store_feature(self, fea, delete=0):
+        """儲存模行特徵重要性"""
+        feature_del = "delete from SFI_F17_FEATURE_INPORTANT where STOREID=%s and START_DATE=%s and END_DATE=%s"
+        feature_insert = "insert into SFI_F17_FEATURE_INPORTANT values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+        try:
+            if delete > 0:
+                conn.delete(feature_del, para=(self.store_id, self.start_date, self.end_date))
+                logg.logger.info(f'已刪除舊 model_{self.store_id} 模型特徵權重')
+            conn.insert(feature_insert, para=(self.store_id, self.start_date, self.end_date,
+                                              datetime.now().strftime("%Y/%m/%d"),
+                                              fea[0],fea[1],fea[2],fea[3],fea[4],fea[5],fea[6],
+                                              fea[7],fea[8],fea[9],fea[10],fea[11]))
+            logg.logger.info(f'已儲存新 model_{self.store_id} 模型特徵權重')
+        except Exception as me:
+            logg.logger.error(me)
+            self.store_log('error', f'店號{self.store_id}模型特徵權重儲存異常 - 程式:data_store,函式:store_feature')
 
     def store_metrics(self, eva, delete=0):
         """儲存模型評價指標"""
@@ -419,7 +510,7 @@ class StoreData:
         evaluate_insert = "insert into SFI_F01_MODEL values(%s,%s,%s,%s,%s,%s,%s,%s,%s)"
         try:
             if delete > 0:
-                conn.delete(evaluate_del, para=(eva[0], eva[8 ]))
+                conn.delete(evaluate_del, para=(eva[0], eva[8]))
                 logg.logger.info(f'已刪除舊 model_{self.store_id} 模型評估指標')
             conn.insert(evaluate_insert, para=(eva[0], eva[1], eva[2], eva[3], eva[4], eva[5], eva[6], eva[7], eva[8]))
             logg.logger.info(f'已儲存新 model_{self.store_id} 模型評估指標')
@@ -444,29 +535,39 @@ class StoreData:
             logg.logger.error(me)
             self.store_log('error', f'店號{self.store_id}來客數預測值儲存異常 - 程式:data_store,函式:store_customer')
 
-    def store_data(self, eva, cus):
+    def store_data(self, eva, cus, fea):
         """以R2和 MAE判別是否儲存數據"""
         try:
             evaluate_query = "select * from SFI_F01_MODEL where STOREID=%s and GDATE=%s"
             cursor = conn.query(evaluate_query,  para=(eva[0], eva[8])).fetchone()
+            log = f'已儲存 model_{self.store_id} 模型特徵權重、評估指標與來客數預測'
             if cursor is None:
+                self.store_feature(fea)
                 self.store_metrics(eva)
                 self.store_customer(cus)
                 self.store_num += 1
+                logg.logger.info(log)
+                self.store_log('info', log)
                 return self.store_num, len(cus)
             else:
                 if cursor[4]<eva[4] and cursor[3]>eva[3]:
+                    self.store_feature(fea,delete=1)
                     self.store_metrics(eva, delete=1)
                     self.store_customer(cus, delete=1)
                     self.store_num += 1
+                    logg.logger.info(log)
+                    self.store_log('info',log)
                     return self.store_num, len(cus)
                 else:
-                    logg.logger.info(f'已存在較佳 model_{self.store_id} 模型評估指標與來客數預測')
+                    log = f'已存在較佳 model_{self.store_id} 模型特徵權重、評估指標與來客數預測'
+                    logg.logger.info(log)
+                    self.store_log('info',log)
                     return self.store_num, 0
         except Exception as me:
             logg.logger.error(me)
 
 def arguments_set():
+    """設定程式啟動時帶入的參數"""
     parser = argparse.ArgumentParser(description="program para settings")
     parser.add_argument('-p', type=int, default=0,  help='輸入想要從幾天後開始,ex. -p 5 等於今日的五天後開始計算')
     parser.add_argument('-r', type=int, default=7,help='輸入想要取幾天做預測,ex. -r 5 等於開始的那天往後計算')
@@ -489,24 +590,12 @@ def arguments_set():
     return args.p, args.r, args.d, args.m
 
 
-config = ConfigParser()
-config.read('setting.ini')
-logg = CodeLogger()
-logg.store_logger()
-conn = DBConnect()
-store = StoreData()
-
-
 def main():
     # 物件化類別並導入參數
-    logg = CodeLogger()
-    conn = DBConnect()
-    store = StoreData()
-    logg.store_logger()
-
     pass_day, run_day, input_date, paras_use = arguments_set()
     start_date =(input_date + relativedelta(days=(pass_day+1))).strftime("%Y/%m/%d")
     end_date = (input_date + relativedelta(days=(pass_day + run_day))).strftime("%Y/%m/%d")
+    program_start_time = datetime.strptime(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
 
     # 從DB導入數據
     gdata = DataGet(pass_day, run_day, input_date)
@@ -519,26 +608,47 @@ def main():
 
         train, verify, predict, sdate = deal_dataframe(value, key)
         if len(train)>1 and len(verify)>1 and len(predict)>1:
+            model_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logg.logger.info(f'{key} store model_start_time: {model_start_time}')
+
             # 透過網格搜索查找模型最優參數
             MP = ModelProcess(train, verify, predict, key)
-            model = MP.model_train(paras_use, start_date, end_date)
+            model,feature = MP.model_train(paras_use, start_date, end_date)
             evaluate = MP.model_verify(model, len(train), input_date)
             customer_df = MP.model_predict(model, sdate)
 
             # 數據儲存
             store.store_id = key
             store.store_num = store_num
-            store_num, cus_num = store.store_data(evaluate,customer_df)
+            store.start_date = start_date
+            store.end_date = end_date
+            store_num, cus_num = store.store_data(evaluate,customer_df,feature)
+
+            model_end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logg.logger.info(f'{key} store model_end_time:{model_end_time}')
         else: continue
 
-    finish_info = f'程式運作正常，已存入 {store_num} 間店各 {cus_num} 則數據'
-    if store_num == 0:  finish_info = f'程式運作正常，已有較佳模型與數據'
-    store.store_log('info', finish_info)
+    program_end_time = datetime.strptime(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
+    program_cost_time = (program_end_time - program_start_time).seconds
+
+    if store_num == 0:
+        finish_info = f'程式運作正常，已存在既有較佳模型與數據'
+        store.store_log('info', finish_info)
+    else:
+        finish_info = f'程式運作正常，已存入 {store_num} 間店各 {cus_num} 則數據'
+        store.store_log('major', finish_info)
     conn.close()
 
     print(f'已完成 {start_date} - {end_date} 所有數據預測')
     print(f'已存入 {store_num} 間店各 {cus_num} 則數據')
+    print(f'共耗時 {program_cost_time} 秒')
 
 
 if __name__=='__main__':
+    config = ConfigParser()
+    config.read('setting.ini')
+    logg = CodeLogger()
+    logg.store_logger()
+    conn = DBConnect()
+    store = StoreData()
     main()

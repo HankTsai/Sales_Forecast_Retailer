@@ -4,6 +4,7 @@ import argparse
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 from configuration import DBConnect, CodeLogger
+from configparser import ConfigParser
 from data_get import DataGet
 from data_transtorm import deal_dataframe
 from model_predict import ModelProcess
@@ -11,6 +12,7 @@ from data_store import StoreData
 
 
 def arguments_set():
+    """設定程式啟動時帶入的參數"""
     parser = argparse.ArgumentParser(description="program para settings")
     parser.add_argument('-p', type=int, default=0,  help='輸入想要從幾天後開始,ex. -p 5 等於今日的五天後開始計算')
     parser.add_argument('-r', type=int, default=7,help='輸入想要取幾天做預測,ex. -r 5 等於開始的那天往後計算')
@@ -35,14 +37,10 @@ def arguments_set():
 
 def main():
     # 物件化類別並導入參數
-    logg = CodeLogger()
-    conn = DBConnect()
-    store = StoreData()
-    logg.store_logger()
-
     pass_day, run_day, input_date, paras_use = arguments_set()
     start_date =(input_date + relativedelta(days=(pass_day+1))).strftime("%Y/%m/%d")
     end_date = (input_date + relativedelta(days=(pass_day + run_day))).strftime("%Y/%m/%d")
+    program_start_time = datetime.strptime(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
 
     # 從DB導入數據
     gdata = DataGet(pass_day, run_day, input_date)
@@ -55,26 +53,47 @@ def main():
 
         train, verify, predict, sdate = deal_dataframe(value, key)
         if len(train)>1 and len(verify)>1 and len(predict)>1:
+            model_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logg.logger.info(f'{key} store model_start_time: {model_start_time}')
+
             # 透過網格搜索查找模型最優參數
             MP = ModelProcess(train, verify, predict, key)
-            model = MP.model_train(paras_use, start_date, end_date)
+            model,feature = MP.model_train(paras_use, start_date, end_date)
             evaluate = MP.model_verify(model, len(train), input_date)
             customer_df = MP.model_predict(model, sdate)
 
             # 數據儲存
             store.store_id = key
             store.store_num = store_num
-            store_num, cus_num = store.store_data(evaluate,customer_df)
+            store.start_date = start_date
+            store.end_date = end_date
+            store_num, cus_num = store.store_data(evaluate,customer_df,feature)
+
+            model_end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            logg.logger.info(f'{key} store model_end_time:{model_end_time}')
         else: continue
 
-    finish_info = f'程式運作正常，已存入 {store_num} 間店各 {cus_num} 則數據'
-    if store_num == 0:  finish_info = f'程式運作正常，已有較佳模型與數據'
-    store.store_log('info', finish_info)
+    program_end_time = datetime.strptime(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "%Y-%m-%d %H:%M:%S")
+    program_cost_time = (program_end_time - program_start_time).seconds
+
+    if store_num == 0:
+        finish_info = f'程式運作正常，已存在既有較佳模型與數據'
+        store.store_log('info', finish_info)
+    else:
+        finish_info = f'程式運作正常，已存入 {store_num} 間店各 {cus_num} 則數據'
+        store.store_log('major', finish_info)
     conn.close()
 
     print(f'已完成 {start_date} - {end_date} 所有數據預測')
     print(f'已存入 {store_num} 間店各 {cus_num} 則數據')
+    print(f'共耗時 {program_cost_time} 秒')
 
 
 if __name__=='__main__':
+    config = ConfigParser()
+    config.read('setting.ini')
+    logg = CodeLogger()
+    logg.store_logger()
+    conn = DBConnect()
+    store = StoreData()
     main()
