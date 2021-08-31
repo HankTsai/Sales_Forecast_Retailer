@@ -204,6 +204,7 @@ def data_encode(df):
     """表格數據編碼轉換"""
     try:
         # label_encode
+        # 特徵變動區域
         label_encoder = preprocessing.LabelEncoder()
         for col in ['HOLIDAY', 'CELEBRATION', 'HIGH_TEMP', 'LOW_TEMP', 'SKY']:
             df[col] = label_encoder.fit_transform(df[col])
@@ -378,7 +379,7 @@ class ModelProcess:
             joblib.dump(model, f'{self.dir_path}/{self.store_id}.pkl')
             feature = self.feature_import(X_train, model)
             logg.logger.info(f'已儲存當次最優化模型 model_{self.store_id}.pkl')
-            store.store_log
+            # self.store_log
             return model,feature
         except Exception as me:
             logg.logger.error(me)
@@ -604,8 +605,8 @@ def main():
 
     store_num = 0; cus_num = 0
     for key, value in dataset.items():
-        # 處理數據
 
+        # 處理數據
         train, verify, predict, sdate = deal_dataframe(value, key)
         if len(train)>1 and len(verify)>1 and len(predict)>1:
             model_start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

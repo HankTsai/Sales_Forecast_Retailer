@@ -2,18 +2,26 @@ select
       CONVERT(VARCHAR(10),convert(datetime, m.SDATE, 111),111) AS SDATE,
        isnull(h.IS_VACATION,'N') as HOLIDAY, 
        isnull(h.NAME,'0') as CELEBRATION,
-       '@StoreId@' as STOREID,
+       '12' as STOREID,
        W.LOW_TEMP,
        W.HIGH_TEMP,
        W.METEOROLOGICAL as SKY,
        E.ENTRY,
        E."EXIT",
-       case when Confirmed is null then Confirmed
-       when CHARINDEX('.',Confirmed)>0 then       
+       case when CHARINDEX('.',Confirmed)>0 then       
        ISNULL(CONVERT(INT,SUBSTRING(Confirmed,0,CHARINDEX('.',Confirmed)))- CONVERT(INT,SUBSTRING(Recovered,0,CHARINDEX('.',Recovered))),'0')
        else
        ISNULL(CONVERT(INT,Confirmed)- CONVERT(INT,Recovered),'0')
        end  as COVID19,
+    
+       case when CHARINDEX('.',Confirmed_New)>0 then       
+       ISNULL(CONVERT(INT,SUBSTRING(Confirmed_New,0,CHARINDEX('.',Confirmed_New))),'0')
+       else
+       ISNULL(CONVERT(INT,Confirmed_New),'0')
+       end  as COVID19_NEW,
+       --ISNULL(s.ENAME,'0') as COVID19_ENAME,
+       --ISNULL(s.PREFIX_SUFFIX,'0') as COVID19_ENAME_DAYS,
+       --ISNULL(s.ENAME+CONVERT(char,s.PREFIX_SUFFIX),'0') as COVID19_LEVEL,
        '0' as TARGET
        
 from DATES m
@@ -21,10 +29,10 @@ left join SFI_E03_HOLIDAY h on convert(datetime, h.DATE, 111)=convert(datetime, 
 left join SFI_E06_WEATHER W on convert(datetime, W.DATE, 111)=convert(datetime,m.SDATE, 111) and W.CITY_CODE='71294'
 left join SFI_E02_ENTRY_AND_EXIT E on DATEADD(day, 14,convert(datetime, E.DATE, 111))=convert(datetime, m.SDATE, 111)
 left join SFI_E01_COVID19 CO on DATEADD(day, 7,convert(datetime, CO.Observation_Date, 111))=convert(datetime, m.SDATE, 111) and CO.Country='Taiwan'
+left join SFI_S02_COVID_LEVEL_DAYS s on s.SDATE=convert(datetime, m.SDATE, 111) and s.LOC_ID = '@StoreId@'
 where  
 m.SDATE>='@StartDate@' and m.SDATE<='@EndDate@'
 order by m.SDATE
-
 
 
 

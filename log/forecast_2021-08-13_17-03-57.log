@@ -1,0 +1,2 @@
+["2021-08-13 17:03:58,313 - ERROR - exec.py - (245, b"Conversion failed when converting the varchar value '@STOREID@' to data type int.DB-Lib error message 20018, severity 16:\nGeneral SQL Server error: Check messages from the SQL Server\n")" - function:query - line:66]
+["2021-08-13 17:03:58,314 - ERROR - exec.py - 'NoneType' object has no attribute 'fetchall'" - function:get_dataframe - line:172]
